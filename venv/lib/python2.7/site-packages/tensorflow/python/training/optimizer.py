@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ class Optimizer(object):
 
   # grads_and_vars is a list of tuples (gradient, variable).  Do whatever you
   # need to the 'gradient' part, for example cap them, etc.
-  capped_grads_and_vars = [(MyCapper(gv[0]), gv[1])) for gv in grads_and_vars]
+  capped_grads_and_vars = [(MyCapper(gv[0]), gv[1]) for gv in grads_and_vars]
 
   # Ask the optimizer to apply the capped gradients.
   opt.apply_gradients(capped_grads_and_vars)
@@ -152,9 +152,13 @@ class Optimizer(object):
     #  {slot_name : { variable_to_train: slot_for_the_variable, ...}, ... }
     self._slots = {}
 
+  def get_name(self):
+    return self._name
+
   def minimize(self, loss, global_step=None, var_list=None,
                gate_gradients=GATE_OP, aggregation_method=None,
-               colocate_gradients_with_ops=False, name=None):
+               colocate_gradients_with_ops=False, name=None,
+               grad_loss=None):
     """Add operations to minimize `loss` by updating `var_list`.
 
     This method simply combines calls `compute_gradients()` and
@@ -176,6 +180,7 @@ class Optimizer(object):
       colocate_gradients_with_ops: If True, try colocating gradients with
         the corresponding op.
       name: Optional name for the returned operation.
+      grad_loss: Optional. A `Tensor` holding the gradient computed for `loss`.
 
     Returns:
       An Operation that updates the variables in `var_list`.  If `global_step`
@@ -187,13 +192,16 @@ class Optimizer(object):
     grads_and_vars = self.compute_gradients(
         loss, var_list=var_list, gate_gradients=gate_gradients,
         aggregation_method=aggregation_method,
-        colocate_gradients_with_ops=colocate_gradients_with_ops)
+        colocate_gradients_with_ops=colocate_gradients_with_ops,
+        grad_loss=grad_loss)
     return self.apply_gradients(grads_and_vars, global_step=global_step,
                                 name=name)
 
-  def compute_gradients(self, loss, var_list=None, gate_gradients=GATE_OP,
+  def compute_gradients(self, loss, var_list=None,
+                        gate_gradients=GATE_OP,
                         aggregation_method=None,
-                        colocate_gradients_with_ops=False):
+                        colocate_gradients_with_ops=False,
+                        grad_loss=None):
     """Compute gradients of `loss` for the variables in `var_list`.
 
     This is the first part of `minimize()`.  It returns a list
@@ -213,6 +221,7 @@ class Optimizer(object):
         Valid values are defined in the class `AggregationMethod`.
       colocate_gradients_with_ops: If True, try colocating gradients with
         the corresponding op.
+      grad_loss: Optional. A `Tensor` holding the gradient computed for `loss`.
 
     Returns:
       A list of (gradient, variable) pairs.
@@ -227,6 +236,8 @@ class Optimizer(object):
                        "Optimizer.GATE_OP, Optimizer.GATE_GRAPH.  Not %s" %
                        gate_gradients)
     self._assert_valid_dtypes([loss])
+    if grad_loss is not None:
+      self._assert_valid_dtypes([grad_loss])
     if var_list is None:
       var_list = variables.trainable_variables()
     for var in var_list:
@@ -236,7 +247,8 @@ class Optimizer(object):
       raise ValueError("No variables to optimize")
     var_refs = [v.ref() for v in var_list]
     grads = gradients.gradients(
-        loss, var_refs, gate_gradients=(gate_gradients == Optimizer.GATE_OP),
+        loss, var_refs, grad_ys=grad_loss,
+        gate_gradients=(gate_gradients == Optimizer.GATE_OP),
         aggregation_method=aggregation_method,
         colocate_gradients_with_ops=colocate_gradients_with_ops)
     if gate_gradients == Optimizer.GATE_GRAPH:
@@ -290,9 +302,11 @@ class Optimizer(object):
     with ops.op_scope([], name, self._name) as name:
       self._prepare()
       for grad, var in grads_and_vars:
-        if not grad:
+        if grad is None:
           continue
-        with ops.name_scope("update_" + var.op.name), ops.device(var.device):
+        # We colocate all ops created in _apply_dense or _apply_sparse
+        # on the same device as the variable.
+        with ops.name_scope("update_" + var.op.name), ops.colocate_with(var):
           if isinstance(grad, ops.Tensor):
             update_ops.append(self._apply_dense(grad, var))
           else:
@@ -301,7 +315,7 @@ class Optimizer(object):
         return self._finish(update_ops, name)
       else:
         with ops.control_dependencies([self._finish(update_ops, "update")]):
-          with ops.device(global_step.device):
+          with ops.colocate_with(global_step):
             return state_ops.assign_add(global_step, 1, name=name).op
 
   def get_slot(self, var, name):
@@ -365,7 +379,7 @@ class Optimizer(object):
     Returns:
       Valid types for loss, variables and gradients.
     """
-    return set([dtypes.float32])
+    return set([dtypes.float16, dtypes.float32, dtypes.float64])
 
   def _create_slots(self, var_list):
     """Create all slots needed by the variables.

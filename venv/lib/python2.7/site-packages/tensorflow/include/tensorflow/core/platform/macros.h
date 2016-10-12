@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -50,8 +50,8 @@ limitations under the License.
 #define TF_PREDICT_FALSE(x) (__builtin_expect(x, 0))
 #define TF_PREDICT_TRUE(x) (__builtin_expect(!!(x), 1))
 #else
-#define TF_PREDICT_FALSE(x) x
-#define TF_PREDICT_TRUE(x) x
+#define TF_PREDICT_FALSE(x) (x)
+#define TF_PREDICT_TRUE(x) (x)
 #endif
 
 // A macro to disallow the copy constructor and operator= functions

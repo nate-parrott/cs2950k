@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 from hw0 import read_images, read_labels
 import os
+from util import one_hot, shuffle_in_unison
 
 class Net(object):
     def __init__(self, input_size, output_size, learn_rate=0.5, dir_path=None):
@@ -52,16 +53,15 @@ class Net(object):
         accuracy_val = self.session.run(accuracy, feed_dict={self.input: inputs, self.desired_output: outputs})
         return int(round(accuracy_val * 100))
 
-def one_hot(idx, size):
-    v = np.zeros(size)
-    v[idx] = 1
-    return v
-
-def load_dataset(name):
+def load_dataset(name, noise=False):
     def featurize(image):
         return image.flatten().astype(float) / 255.0
     images = np.array([featurize(image) for image in read_images(name + '-images.idx3-ubyte')])
-    labels = np.array([one_hot(label, 10) for label in read_labels(name + '-labels.idx1-ubyte')])
+    labels = np.array([one_hot(label, 11) for label in read_labels(name + '-labels.idx1-ubyte')])
+    extra_count = int(labels.shape[0] * 0.1)
+    images = np.append(images, np.random.rand(extra_count, 784), axis=0)
+    labels = np.append(labels, np.array([one_hot(10,11) for _ in xrange(extra_count)]), axis=0)
+    # print images.shape, labels.shape
     return images, labels
 
 def simple_train():
@@ -84,15 +84,15 @@ def random_batch(inputs, outputs, count=100):
     return inputs.take(indices, axis=0), outputs.take(indices, axis=0)
 
 def train(iterations=1000, train=True):
-    net = Net(784, 10, dir_path='save/hw2-2')
+    net = Net(784, 11, dir_path='save/hw2-noise')
     print 'RESTORED: {0}'.format(net.was_restored)
-    test_in, test_out = load_dataset('t10k')
-    train_in, train_out = load_dataset('train')
+    test_in, test_out = load_dataset('t10k', noise=True)
+    train_in, train_out = load_dataset('train', noise=True)
     print "Accuracy: {0}".format(net.evaluate(train_in, train_out))
     if train:
         for i in xrange(iterations):
             _in, _out = random_batch(train_in, train_out)
-            assert _in.shape[0] == 100 and _in.shape[1] == 784 and _out.shape[1] == 10
+            # assert _in.shape[0] == 100 and _in.shape[1] == 784 and _out.shape[1] == 10
             net.train(_in, _out)
             print "Accuracy: {0}".format(net.evaluate(train_in, train_out))
             if i % 10 == 0:
@@ -102,4 +102,4 @@ def train(iterations=1000, train=True):
 
 if __name__ == '__main__':
     # simple_train()
-    train(train=False)
+    train(train=True)
