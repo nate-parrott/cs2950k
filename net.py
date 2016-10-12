@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import math
 import os
+import datetime
 
 class Net(object):
     def __init__(self, dir_path=None, **kwargs):
@@ -53,6 +54,8 @@ class Net(object):
                 inp, out = next(testing_batch_generator)
                 print self.evaluate(inp, out)
                 self.save(step)
+        print self.evaluate(inp, out)
+        self.save(step)
 
 def random_batch(inputs, outputs, count=100):
     indices = np.random.randint(0, len(inputs)-1, count)
@@ -61,6 +64,8 @@ def random_batch(inputs, outputs, count=100):
 def batch_generator(inputs, outputs, size=100, batches=None, epochs=None, random=False, print_progress=False):
     if epochs is not None:
         batches = int(math.ceil(len(inputs) * 1.0 / size))
+    
+    last_printed = datetime.datetime.now()
     
     step = 0
     while True:
@@ -72,7 +77,8 @@ def batch_generator(inputs, outputs, size=100, batches=None, epochs=None, random
             end_index = min(start_index + size, len(inputs))
             yield inputs[start_index:end_index], outputs[start_index:end_index]
         step += 1
-        if print_progress and batches:
+        if print_progress and batches and (datetime.datetime.now() - last_printed).total_seconds() > 4:
+            last_printed = datetime.datetime.now()
             print "{0}%".format(step * 100.0 / batches)
         if batches is not None and step >= batches:
             break
